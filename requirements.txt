@@ -1,0 +1,7 @@
+Flask>=2.0.0
+PyMuPDF>=1.22.0        # for fitz
+marisa-trie>=0.7.7
+python-Levenshtein>=0.12.2
+Pillow>=8.0.0          # for PIL
+tqdm>=4.62.0
+gunicorn>=20.0.0       # required for Render
