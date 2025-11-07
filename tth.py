@@ -45,7 +45,7 @@ RESULT_HTML = """
 <p>Text Similarity: {{ (text_similarity * 100) | round(2) }}%</p>
 <p>Trie Text Fidelity: {{ (trie_text_fidelity * 100) | round(2) }}%</p>
 <p>Image Similarity: {{ (image_similarity * 100) | round(2) }}%</p>
-<p>Compression Ratio (Reconstructed/Input): {{ (compression_ratio * 100) | round(2) }}%</p>
+<p>Compression Percentage (Compressed/Original): {{ compression_percent | round(2) }}%</p>
 <p>Original PDF size: {{ orig_size }} MB</p>
 <p>Compressed PDF size: {{ compressed_size }} MB</p>
 <p>Reconstructed PDF size: {{ reconstructed_size }} MB</p>
@@ -53,7 +53,6 @@ RESULT_HTML = """
 <p>Headers count: {{ headers_count }} | Total header size: {{ headers_size }} MB</p>
 <p>Total reconstruction overhead: {{ reconstruction_overhead }} MB</p>
 <p><a href="/download?path={{ compressed_pdf }}">Download Compressed PDF</a></p>
-<p><a href="/download?path={{ reconstructed_pdf }}">Download Reconstructed PDF</a></p>
 <a href="/">Process another file</a>
 </body></html>
 """
@@ -155,6 +154,7 @@ def extract_tokens_from_compressed(COMPRESSED_PDF, TRIE_FILE, TOKEN_DIR, errors_
 
 def encode_to_base64_streaming(COMPRESSED_PDF, COMPRESSED_PDF_BASE64, errors_encountered, timings):
     start = time.time()
+    import base64
     try:
         with open(COMPRESSED_PDF, 'rb') as pdf_file, open(COMPRESSED_PDF_BASE64, 'w') as b64_file:
             while True:
@@ -409,7 +409,6 @@ def index():
         errors_encountered = []
         timings = {}
 
-        # Profiling pipeline as your original function (simplified here)
         profiler = cProfile.Profile()
         profiler.enable()
         try:
@@ -426,10 +425,8 @@ def index():
             traceback.print_exc()
         try:
             orig_text_b, comp_text_b = compress_text_with_trie(COMPRESSED_PDF, TRIE_FILE, COMPRESSED_TOKENS, TOKEN_OFFSETS, errors_encountered, timings)
-            text_compression_ratio = ((1 - comp_text_b / orig_text_b) * 100) if orig_text_b else 0
         except Exception:
             traceback.print_exc()
-            text_compression_ratio = 0
         try:
             encode_to_base64_streaming(COMPRESSED_PDF, COMPRESSED_PDF_BASE64, errors_encountered, timings)
         except Exception:
@@ -448,7 +445,6 @@ def index():
 
         # Size calculations
         compress_mb = file_size_mb(COMPRESSED_PDF)
-        compress_b64_mb = file_size_mb(COMPRESSED_PDF_BASE64)
         orig_mb = file_size_mb(INPUT_PDF)
         trie_mb = file_size_mb(TRIE_FILE)
         header_files = os.listdir(HEADER_DIR)
@@ -456,16 +452,20 @@ def index():
         total_headers_mb = sum(header_sizes)
         text_comp_mb = file_size_mb(COMPRESSED_TOKENS)
         total_recon_overhead = trie_mb + total_headers_mb
-        compression_ratio = (file_size_mb(RECONSTRUCTED_PDF) / orig_mb) if orig_mb else 0
 
-        # Similarity analysis
+        # Compute compression percent as (1 - compressed/original) * 100
+        if orig_mb > 0:
+            compression_percent = (1 - (compress_mb / orig_mb)) * 100
+        else:
+            compression_percent = 0.0
+
         text_sim, img_sim, trie_fid = similarity_report(INPUT_PDF, RECONSTRUCTED_PDF, COMPRESSED_TOKENS, TOKEN_OFFSETS, TRIE_FILE, errors_encountered, timings)
 
         return render_template_string(RESULT_HTML,
                                       text_similarity=text_sim,
                                       trie_text_fidelity=trie_fid,
                                       image_similarity=img_sim,
-                                      compression_ratio=compression_ratio,
+                                      compression_percent=compression_percent,
                                       orig_size=round(orig_mb,4),
                                       compressed_size=round(compress_mb,4),
                                       reconstructed_size=round(file_size_mb(RECONSTRUCTED_PDF),4),
@@ -473,8 +473,7 @@ def index():
                                       headers_count=len(header_files),
                                       headers_size=round(total_headers_mb,4),
                                       reconstruction_overhead=round(total_recon_overhead,4),
-                                      compressed_pdf=COMPRESSED_PDF,
-                                      reconstructed_pdf=RECONSTRUCTED_PDF)
+                                      compressed_pdf=COMPRESSED_PDF)
     return render_template_string(UPLOAD_HTML)
 
 @app.route('/download')
